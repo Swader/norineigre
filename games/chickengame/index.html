@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fashion Chicken Express</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #87CEEB; /* Sky blue */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* Prevent default touch actions like scrolling */
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #uiLayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let touches pass through to canvas */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .hud {
+            padding: 20px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            display: flex;
+            justify-content: space-between;
+        }
+        #startScreen, #gameOverScreen, #winScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            color: white;
+            pointer-events: auto;
+            border: 4px solid #FF69B4; /* Hot pink border */
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            min-width: 300px;
+            max-width: 90%;
+        }
+        #winScreen {
+            border-color: #FFD700; /* Gold border for winner */
+            background: linear-gradient(135deg, rgba(50,0,50,0.9), rgba(0,0,0,0.9));
+        }
+        h1 {
+            margin-top: 0;
+            color: #FF69B4;
+            font-size: 32px;
+        }
+        #winScreen h1 {
+            color: #FFD700;
+        }
+        p {
+            font-size: 18px;
+            line-height: 1.5;
+        }
+        button {
+            background: #FF69B4;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 20px;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-weight: bold;
+            transition: transform 0.1s;
+        }
+        #playAgainBtn {
+            background: #FFD700;
+            color: #333;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        .hidden {
+            display: none !important;
+        }
+        .reward-img {
+            width: 120px;
+            height: 120px;
+            margin: 10px auto;
+            display: block;
+            background: radial-gradient(circle, rgba(255,255,255,0.2) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+            padding: 10px;
+        }
+        /* Mobile specific adjustments */
+        @media (max-width: 600px) {
+            h1 { font-size: 24px; }
+            .hud { font-size: 18px; padding: 10px; }
+            .reward-img { width: 100px; height: 100px; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="uiLayer">
+        <div class="hud">
+            <span id="scoreDisplay">Score: 0 / 100</span>
+            <span id="highScoreDisplay">Best: 0</span>
+        </div>
+    </div>
+
+    <div id="startScreen">
+        <h1>Fashion Chicken<br>Express</h1>
+        <p>You are a fabulous chicken on the run!</p>
+        <p>Tap or Space to Jump.<br>Tap twice to Double Jump.</p>
+        <p>Avoid the angry Butchers!</p>
+        <button id="startBtn">Run!</button>
+    </div>
+
+    <div id="gameOverScreen" class="hidden">
+        <h1>Oh No!</h1>
+        <p>The fashion show is over.</p>
+        <p id="finalScore">Score: 0</p>
+        <button id="restartBtn">Try Again</button>
+    </div>
+
+    <div id="winScreen" class="hidden">
+        <h1>Wedding Bells!</h1>
+        <p>You reached 100 points!</p>
+        <p>Your Reward: Marriage to this handsome Rooster!</p>
+        <img id="roosterReward" class="reward-img" src="" alt="Handsome Rooster">
+        <button id="playAgainBtn">Honeymoon Run</button>
+    </div>
+
+<script>
+/**
+ * Game Assets - SVG Generation
+ * Creating data URIs for images to be used in Canvas
+ */
+
+const svgChicken = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <!-- Body -->
+    <ellipse cx="50" cy="60" rx="30" ry="25" fill="#D4AF37" />
+    
+    <!-- Dress (Pink, fancy) -->
+    <path d="M 25 60 Q 50 50 75 60 L 85 90 Q 50 100 15 90 Z" fill="#FF1493" />
+    <path d="M 25 60 Q 15 80 15 90" stroke="#C71585" stroke-width="2" fill="none"/>
+    <path d="M 75 60 Q 85 80 85 90" stroke="#C71585" stroke-width="2" fill="none"/>
+    
+    <!-- Wing -->
+    <ellipse cx="45" cy="65" rx="15" ry="10" fill="#DAA520" transform="rotate(-10 45 65)" />
+
+    <!-- Head -->
+    <circle cx="50" cy="35" r="18" fill="#D4AF37" />
+    
+    <!-- Comb -->
+    <path d="M 40 22 Q 50 10 60 22" fill="#FF0000" />
+    <path d="M 45 22 Q 50 15 55 22" fill="#FF0000" />
+    
+    <!-- Beak -->
+    <path d="M 62 35 L 75 38 L 62 41 Z" fill="#FF8C00" />
+    
+    <!-- Wattle -->
+    <circle cx="60" cy="45" r="4" fill="#FF0000" />
+    
+    <!-- Eye -->
+    <circle cx="58" cy="32" r="3" fill="white" />
+    <circle cx="60" cy="32" r="1" fill="black" />
+
+    <!-- Crown -->
+    <path d="M 38 22 L 38 10 L 44 18 L 50 5 L 56 18 L 62 10 L 62 22 Z" fill="#FFD700" stroke="#B8860B" stroke-width="1"/>
+    
+    <!-- Purse -->
+    <rect x="65" y="65" width="20" height="15" rx="3" fill="#8B4513" />
+    <path d="M 68 65 Q 75 55 82 65" stroke="#FFD700" stroke-width="2" fill="none" />
+    <rect x="72" y="70" width="6" height="4" fill="#FFD700" />
+</svg>`;
+
+const svgRooster = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <!-- Tail Feathers -->
+    <path d="M 20 60 Q 10 40 30 30" stroke="#006400" stroke-width="4" fill="none"/>
+    <path d="M 20 60 Q 5 50 25 40" stroke="#008000" stroke-width="4" fill="none"/>
+    <path d="M 20 60 Q 5 70 25 80" stroke="#228B22" stroke-width="4" fill="none"/>
+
+    <!-- Body -->
+    <ellipse cx="50" cy="60" rx="25" ry="30" fill="#8B4513" />
+    
+    <!-- Tuxedo Vest -->
+    <path d="M 35 60 Q 50 90 65 60" fill="white" />
+    <path d="M 35 60 L 35 90 L 65 90 L 65 60 Z" fill="#333" opacity="0.1"/> 
+    
+    <!-- Bow Tie -->
+    <path d="M 45 55 L 55 55 L 55 65 L 45 65 Z" fill="#FF0000" />
+    <circle cx="50" cy="60" r="3" fill="#800000" />
+
+    <!-- Head -->
+    <circle cx="50" cy="30" r="16" fill="#A0522D" />
+    
+    <!-- Large Rooster Comb -->
+    <path d="M 40 15 Q 50 -5 60 15" fill="#FF0000" />
+    <path d="M 45 15 Q 50 0 55 15" fill="#FF0000" />
+    
+    <!-- Beak -->
+    <path d="M 60 30 L 75 33 L 60 36 Z" fill="#FFD700" />
+    
+    <!-- Wattle -->
+    <circle cx="60" cy="40" r="5" fill="#FF0000" />
+    
+    <!-- Eye -->
+    <circle cx="55" cy="28" r="3" fill="white" />
+    <circle cx="57" cy="28" r="1" fill="black" />
+</svg>`;
+
+const svgTrainWagon = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+    <!-- Main Body -->
+    <rect x="10" y="20" width="180" height="60" fill="#4682B4" stroke="#2F4F4F" stroke-width="3" rx="2" />
+    
+    <!-- Details (Stripes) -->
+    <rect x="10" y="30" width="180" height="5" fill="#87CEEB" opacity="0.5" />
+    <rect x="10" y="70" width="180" height="5" fill="#87CEEB" opacity="0.5" />
+    
+    <!-- Door -->
+    <rect x="80" y="25" width="40" height="50" fill="#2F4F4F" />
+    
+    <!-- Wheels Base -->
+    <rect x="25" y="80" width="150" height="5" fill="#333" />
+    
+    <!-- Wheels -->
+    <circle cx="40" cy="90" r="10" fill="#111" stroke="#555" stroke-width="2" />
+    <circle cx="160" cy="90" r="10" fill="#111" stroke="#555" stroke-width="2" />
+    
+    <!-- Coupling -->
+    <rect x="0" y="55" width="10" height="10" fill="#333" />
+    <rect x="190" y="55" width="10" height="10" fill="#333" />
+</svg>`;
+
+const svgEnemy = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <!-- Head -->
+    <circle cx="50" cy="35" r="15" fill="#FFCCAA" />
+    
+    <!-- Hat (Paper boat style butcher hat) -->
+    <rect x="35" y="15" width="30" height="15" fill="white" stroke="#ccc" />
+    <line x1="35" y1="30" x2="65" y2="30" stroke="#ccc" />
+
+    <!-- Body -->
+    <rect x="35" y="55" width="30" height="40" fill="#eee" />
+    
+    <!-- Blood stained Apron -->
+    <path d="M 38 60 L 38 95 L 62 95 L 62 60 Z" fill="white" stroke="#ccc" />
+    <circle cx="45" cy="70" r="3" fill="#8B0000" opacity="0.7"/> 
+    <circle cx="55" cy="80" r="2" fill="#8B0000" opacity="0.6"/> 
+    <path d="M 40 75 Q 45 85 50 75" stroke="#8B0000" stroke-width="2" opacity="0.5" fill="none"/>
+    
+    <!-- Arms -->
+    <path d="M 35 60 L 20 50" stroke="#FFCCAA" stroke-width="8" stroke-linecap="round" />
+    <path d="M 65 60 L 80 50" stroke="#FFCCAA" stroke-width="8" stroke-linecap="round" />
+    
+    <!-- Cleaver -->
+    <rect x="78" y="25" width="15" height="25" fill="silver" stroke="#555" />
+    <rect x="83" y="50" width="5" height="10" fill="#553311" /> 
+    <circle cx="82" cy="30" r="1.5" fill="white" /> 
+    
+    <!-- Face (Angry) -->
+    <circle cx="45" cy="35" r="2" fill="black" />
+    <circle cx="55" cy="35" r="2" fill="black" />
+    <!-- Eyebrows -->
+    <line x1="42" y1="30" x2="48" y2="33" stroke="black" stroke-width="2" />
+    <line x1="58" y1="30" x2="52" y2="33" stroke="black" stroke-width="2" />
+    <!-- Mouth -->
+    <path d="M 45 42 Q 50 40 55 42" stroke="black" stroke-width="2" fill="none" />
+</svg>`;
+
+// Convert SVGs to Image objects
+function createImgFromSvg(svgString) {
+    const img = new Image();
+    const blob = new Blob([svgString], {type: 'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    img.src = url;
+    return img;
+}
+
+const chickenImg = createImgFromSvg(svgChicken);
+const wagonImg = createImgFromSvg(svgTrainWagon);
+const enemyImg = createImgFromSvg(svgEnemy);
+const roosterImgUrl = URL.createObjectURL(new Blob([svgRooster], {type: 'image/svg+xml'}));
+
+// Set the rooster image in the DOM
+document.getElementById('roosterReward').src = roosterImgUrl;
+
+/**
+ * Game Logic
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game State
+let gameState = 'START'; // START, PLAYING, GAMEOVER, GAMEWON
+let score = 0;
+let highScore = localStorage.getItem('chickenHighScore') || 0;
+document.getElementById('highScoreDisplay').innerText = `Best: ${highScore}`;
+let frameCount = 0;
+let speed = 5;
+const WIN_SCORE = 100;
+
+// Physics Constants
+const GRAVITY = 0.6;
+const JUMP_FORCE = -12;
+const GROUND_Y = canvas.height - 100; // rough baseline
+
+// Resize Handling
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Objects
+const chicken = {
+    x: 100,
+    y: 0,
+    width: 60,
+    height: 60,
+    dy: 0,
+    jumpCount: 0,
+    maxJumps: 2,
+    grounded: false,
+    
+    reset: function() {
+        this.y = canvas.height / 2;
+        this.dy = 0;
+        this.jumpCount = 0;
+        this.grounded = false;
+        // Adjust size for mobile if screen is small
+        if (canvas.width < 600) {
+            this.width = 50;
+            this.height = 50;
+            this.x = 50;
+        } else {
+            this.width = 60;
+            this.height = 60;
+            this.x = 100;
+        }
+    },
+
+    jump: function() {
+        if (this.jumpCount < this.maxJumps) {
+            this.dy = JUMP_FORCE;
+            this.jumpCount++;
+            this.grounded = false;
+        }
+    },
+
+    update: function() {
+        this.dy += GRAVITY;
+        this.y += this.dy;
+
+        // Check bounds (falling off screen)
+        if (this.y > canvas.height) {
+            gameOver();
+        }
+    },
+
+    draw: function() {
+        ctx.drawImage(chickenImg, this.x, this.y, this.width, this.height);
+    }
+};
+
+let wagons = [];
+let enemies = [];
+
+const ground = {
+    height: 70, // Height of the grass area
+    offset: 0,  // For scrolling
+    
+    update: function() {
+        this.offset -= speed;
+        // Reset offset to loop the pattern (pattern width is 40)
+        if (this.offset < -40) {
+            this.offset += 40;
+        }
+    },
+    
+    draw: function() {
+        const groundY = canvas.height - this.height;
+        
+        // 1. Draw solid ground background
+        ctx.fillStyle = "#228B22"; // ForestGreen
+        ctx.fillRect(0, groundY + 10, canvas.width, this.height);
+        
+        // 2. Draw textured top layer (grassy spikes)
+        ctx.fillStyle = "#32CD32"; // LimeGreen
+        
+        // We draw from offset to width + extra to cover scrolling
+        for (let i = this.offset; i < canvas.width; i += 40) {
+            ctx.beginPath();
+            // Create a "tuft" of grass
+            ctx.moveTo(i, groundY + 20); // Base left
+            ctx.lineTo(i + 10, groundY); // Tip
+            ctx.lineTo(i + 20, groundY + 20); // Base right
+            // Add a second varied blade
+            ctx.lineTo(i + 30, groundY + 5); 
+            ctx.lineTo(i + 40, groundY + 20);
+            ctx.fill();
+            
+            // Fill the rest below the spikes so no gaps appear
+            ctx.fillRect(i, groundY + 20, 40, this.height - 20);
+        }
+    }
+};
+
+class Wagon {
+    constructor(x) {
+        this.width = 200;
+        this.height = 100;
+        this.x = x;
+        // Y position is relative to bottom of screen
+        this.y = canvas.height - 150; 
+        
+        // Randomize wagon height slightly for variety
+        if (Math.random() > 0.7) {
+             this.y -= 20; 
+        }
+    }
+
+    update() {
+        this.x -= speed;
+    }
+
+    draw() {
+        ctx.drawImage(wagonImg, this.x, this.y, this.width, this.height);
+        
+        // Draw track below
+        ctx.fillStyle = "#555";
+        ctx.fillRect(this.x, this.y + this.height - 10, this.width, 10);
+        
+        // Sleepers
+        ctx.fillStyle = "#3e2723"; // Wood color
+        for(let i=0; i<this.width; i+=40) {
+            ctx.fillRect(this.x + i, this.y + this.height, 10, 5);
+        }
+    }
+}
+
+class Enemy {
+    constructor(wagon) {
+        this.width = 50;
+        this.height = 50;
+        // Position on top of the wagon
+        this.x = wagon.x + 50 + Math.random() * (wagon.width - 100);
+        this.y = wagon.y - this.height + 10; // slightly overlapped
+        this.wagon = wagon;
+    }
+
+    update() {
+        this.x -= speed;
+    }
+
+    draw() {
+        ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
+    }
+}
+
+// Background clouds
+let clouds = [];
+class Cloud {
+    constructor() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * (canvas.height / 2);
+        this.speed = (Math.random() * 0.5) + 0.1;
+        this.size = (Math.random() * 50) + 30;
+    }
+    update() {
+        this.x -= this.speed;
+        if (this.x + this.size < 0) {
+            this.x = canvas.width + this.size;
+            this.y = Math.random() * (canvas.height / 2);
+        }
+    }
+    draw() {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.arc(this.x + this.size/2, this.y - 10, this.size*0.8, 0, Math.PI * 2);
+        ctx.arc(this.x - this.size/2, this.y - 10, this.size*0.8, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function drawSun() {
+    const sunX = canvas.width - 100;
+    const sunY = 80;
+    const sunRadius = 50;
+    ctx.save();
+    ctx.shadowBlur = 40;
+    ctx.shadowColor = "rgba(255, 215, 0, 0.8)"; // Gold glow
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunRadius, 0, Math.PI * 2);
+    ctx.fillStyle = "#FFD700"; // Gold
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(sunX, sunY);
+    const time = Date.now() * 0.001;
+    ctx.rotate(time * 0.1); 
+    ctx.strokeStyle = "rgba(255, 215, 0, 0.4)";
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 12; i++) {
+        ctx.rotate(Math.PI / 6);
+        ctx.beginPath();
+        ctx.moveTo(sunRadius + 10, 0);
+        ctx.lineTo(sunRadius + 30, 0);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function initGame() {
+    score = 0;
+    speed = 6;
+    chicken.reset();
+    wagons = [];
+    enemies = [];
+    clouds = [];
+    
+    // Initial platform
+    wagons.push(new Wagon(50));
+    wagons.push(new Wagon(250));
+    wagons.push(new Wagon(450));
+    wagons.push(new Wagon(650));
+    
+    // Create clouds
+    for(let i=0; i<5; i++) clouds.push(new Cloud());
+
+    document.getElementById('scoreDisplay').innerText = `Score: 0 / ${WIN_SCORE}`;
+    document.getElementById('startScreen').classList.add('hidden');
+    document.getElementById('gameOverScreen').classList.add('hidden');
+    document.getElementById('winScreen').classList.add('hidden');
+    
+    gameState = 'PLAYING';
+    gameLoop();
+}
+
+function spawnWagon() {
+    const lastWagon = wagons[wagons.length - 1];
+    const minGap = 80;
+    const maxGap = 200 + (speed * 5); 
+    const gap = Math.floor(Math.random() * (maxGap - minGap + 1) + minGap);
+    
+    const newX = lastWagon.x + lastWagon.width + gap;
+    const newWagon = new Wagon(newX);
+    wagons.push(newWagon);
+
+    // Chance to spawn enemy
+    // Enemies start appearing earlier now
+    if (Math.random() < 0.4 && (score/10) > 20) { 
+        enemies.push(new Enemy(newWagon));
+    }
+}
+
+function checkCollisions() {
+    // 1. Chicken on Wagons
+    chicken.grounded = false;
+    
+    for (let w of wagons) {
+        if (
+            chicken.x + chicken.width * 0.4 < w.x + w.width && 
+            chicken.x + chicken.width * 0.6 > w.x &&
+            chicken.y + chicken.height >= w.y &&
+            chicken.y + chicken.height <= w.y + 20 &&
+            chicken.dy >= 0 
+        ) {
+            chicken.grounded = true;
+            chicken.dy = 0;
+            chicken.jumpCount = 0;
+            chicken.y = w.y - chicken.height;
+        }
+    }
+
+    // 2. Chicken vs Enemies
+    for (let e of enemies) {
+        const hitboxPadding = 10;
+        if (
+            chicken.x + hitboxPadding < e.x + e.width - hitboxPadding &&
+            chicken.x + chicken.width - hitboxPadding > e.x + hitboxPadding &&
+            chicken.y + hitboxPadding < e.y + e.height - hitboxPadding &&
+            chicken.y + chicken.height - hitboxPadding > e.y + hitboxPadding
+        ) {
+            gameOver();
+        }
+    }
+}
+
+function update() {
+    // Increase speed slowly
+    speed += 0.001;
+    score++;
+    
+    const currentPoints = Math.floor(score/10);
+    document.getElementById('scoreDisplay').innerText = `Score: ${currentPoints} / ${WIN_SCORE}`;
+
+    // CHECK WIN CONDITION
+    if (currentPoints >= WIN_SCORE) {
+        gameWin();
+        return;
+    }
+
+    chicken.update();
+    ground.update();
+
+    if (wagons.length > 0 && wagons[0].x + wagons[0].width < -100) {
+        wagons.shift();
+    }
+    if (enemies.length > 0 && enemies[0].x + enemies[0].width < -100) {
+        enemies.shift();
+    }
+
+    const lastWagon = wagons[wagons.length - 1];
+    if (lastWagon.x < canvas.width) {
+        spawnWagon();
+    }
+
+    wagons.forEach(w => w.update());
+    enemies.forEach(e => e.update());
+    clouds.forEach(c => c.update());
+
+    checkCollisions();
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawSun();
+    clouds.forEach(c => c.draw());
+    ground.draw();
+    wagons.forEach(w => w.draw());
+    enemies.forEach(e => e.draw());
+    chicken.draw();
+}
+
+function gameLoop() {
+    if (gameState !== 'PLAYING') return;
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+function gameOver() {
+    gameState = 'GAMEOVER';
+    const finalScore = Math.floor(score/10);
+    document.getElementById('finalScore').innerText = `Score: ${finalScore}`;
+    document.getElementById('gameOverScreen').classList.remove('hidden');
+}
+
+function gameWin() {
+    gameState = 'GAMEWON';
+    document.getElementById('winScreen').classList.remove('hidden');
+    
+    // Save High Score
+    if (WIN_SCORE > highScore) {
+        highScore = WIN_SCORE;
+        localStorage.setItem('chickenHighScore', highScore);
+        document.getElementById('highScoreDisplay').innerText = `Best: ${highScore}`;
+    }
+}
+
+// Input Handling
+function handleInput(e) {
+    if (e.type === 'keydown' && e.code !== 'Space') return;
+    if (e.type !== 'keydown') e.preventDefault(); 
+
+    if (gameState === 'START') {
+        initGame();
+    } else if (gameState === 'PLAYING') {
+        chicken.jump();
+    } else if (gameState === 'GAMEOVER' || gameState === 'GAMEWON') {
+        setTimeout(initGame, 200);
+    }
+}
+
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') handleInput(e);
+});
+canvas.addEventListener('touchstart', handleInput, {passive: false});
+canvas.addEventListener('mousedown', handleInput);
+
+document.getElementById('startBtn').addEventListener('click', initGame);
+document.getElementById('restartBtn').addEventListener('click', initGame);
+document.getElementById('playAgainBtn').addEventListener('click', initGame);
+
+</script>
+</body>
+</html>

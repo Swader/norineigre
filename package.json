@@ -3,6 +3,12 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "dev": "bun --hot ./index.ts",
+    "build": "bun ./scripts/build.ts",
+    "preview": "bun ./scripts/preview.ts",
+    "generate:delivery-missions": "bun ./scripts/generate-delivery-missions.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

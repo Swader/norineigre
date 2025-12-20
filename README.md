@@ -18,3 +18,40 @@ There is a "flip page" button in the right side, or the bottom right of the pape
 The piece of paper is on a desk of crayons, the image of which is in the ./images folder as desk.png.
 
 The website should not use node for any reason whatsoever, only Bun is allowed as the JS runtime. The website should be statically hostable, so it should compile into a static bundle with a command like bun run build or similar.
+
+## Running
+
+### Dev (with HMR)
+
+```sh
+bun run dev
+```
+
+Then open the URL it prints (defaults to `http://localhost:3000`).
+
+### Build (static `dist/`)
+
+```sh
+bun run build
+```
+
+### Preview the build
+
+```sh
+bun run preview
+```
+
+## Customize content
+
+- Update the two game links in `index.html` (currently `example.com` placeholders).
+- Replace the "O meni" text in `index.html` with Nora's handwritten copy.
+
+## Delivery game (offline missions)
+
+`games/deliverygame/` now reads missions from a local `missions.json` file (no API key required).
+
+To regenerate 1000 missions:
+
+```sh
+bun run generate:delivery-missions
+```

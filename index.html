@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="hr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Norine Igre — vibe-coded video games by Nora."
+    />
+    <title>Norine Igre</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="stage">
+      <section class="paper-scene" aria-label="Norine Igre">
+        <div class="paper" id="paper" data-flipped="false">
+          <div class="paper__side paper__front" aria-labelledby="title-front">
+            <header class="paper__header">
+              <h1 id="title-front" class="crayon-title">Norine Igre</h1>
+            </header>
+
+            <div class="cards" aria-label="Games">
+              <a
+                class="game-card"
+                href="./games/chickengame/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  class="game-card__img"
+                  src="./images/chickengame2.png"
+                  alt="Fashion Chicken Express screenshot"
+                  loading="lazy"
+                />
+                <div class="game-card__meta">
+                  <h2 class="game-card__title">Fashion Chicken Express</h2>
+                  <p class="game-card__desc">skok po vagonima, bježi kuharima</p>
+                </div>
+              </a>
+
+              <a
+                class="game-card"
+                href="./games/deliverygame/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  class="game-card__img"
+                  src="./images/deliverygame2.png"
+                  alt="Delivery man screenshot"
+                  loading="lazy"
+                />
+                <div class="game-card__meta">
+                  <h2 class="game-card__title">Delivery man</h2>
+                  <p class="game-card__desc">pokupi pakete i dostavi na kuće</p>
+                </div>
+              </a>
+            </div>
+          </div>
+
+          <div class="paper__side paper__back" aria-labelledby="title-back">
+            <header class="paper__header">
+              <h1 id="title-back" class="crayon-title">O meni</h1>
+              <p class="subtitle">bok!</p>
+            </header>
+
+            <article class="about">
+                <img
+                class="omenicard"
+                  src="./images/omeni.png"
+                  alt="O Nori"
+                  loading="lazy"
+                />            </article>
+          </div>
+        </div>
+
+        <button
+          class="flip-btn"
+          type="button"
+          id="flipButton"
+          aria-controls="paper"
+          aria-pressed="false"
+        >
+          <span class="flip-btn__text" id="flipButtonText">O meni</span>
+          <span class="flip-btn__icon" aria-hidden="true">↻</span>
+        </button>
+      </section>
+    </main>
+
+    <script type="module" src="./frontend.ts"></script>
+  </body>
+</html>
+
+
