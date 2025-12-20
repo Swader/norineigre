@@ -100,6 +100,15 @@ async function main() {
   const html = await Bun.file("./index.html").text();
   const prodHtml = html.replaceAll("./frontend.ts", "./frontend.js");
   await Bun.write("./dist/index.html", prodHtml);
+
+  // GitHub Pages helpers:
+  // - ".nojekyll" disables Jekyll processing (prevents odd edge-cases with folders)
+  // - "CNAME" enables custom domain if present at repo root
+  await Bun.write("./dist/.nojekyll", "");
+  const cname = Bun.file("./CNAME");
+  if (await cname.exists()) {
+    await Bun.write("./dist/CNAME", await cname.text());
+  }
 }
 
 main();

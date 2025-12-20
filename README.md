@@ -55,3 +55,54 @@ To regenerate 1000 missions:
 ```sh
 bun run generate:delivery-missions
 ```
+
+## Deploy to GitHub Pages (with a custom domain)
+
+This repo is set up to deploy the static build output (`dist/`) to **GitHub Pages** using **GitHub Actions** on every push to the `master` branch.
+
+### 1) Add the GitHub Actions workflow (already included)
+
+The workflow file is:
+
+- `/.github/workflows/pages.yml`
+
+It runs `bun install` + `bun run build` and publishes the `dist/` folder to Pages.
+
+### 2) (Recommended) Add a `CNAME` file to the repo root
+
+Create a file named `CNAME` in the repo root **with exactly one line**: your custom domain (for example):
+
+```txt
+norineigre.com
+```
+
+On build, this gets copied into `dist/CNAME` automatically.
+
+### 3) Enable GitHub Pages in repo settings
+
+In GitHub:
+
+- Go to **Repo → Settings → Pages**
+- Under **Build and deployment**
+  - Set **Source** to **GitHub Actions**
+- Under **Custom domain**
+  - Enter your domain (if it isn’t already set) and save
+  - Enable **Enforce HTTPS** once it becomes available
+
+### 4) Push to GitHub
+
+Commit and push to `master`:
+
+```sh
+git add -A
+git commit -m "Deploy: enable GitHub Pages"
+git push origin master
+```
+
+### 5) Watch the deploy
+
+- Open **Repo → Actions**
+- Click **Deploy to GitHub Pages**
+- Wait for it to finish (it will deploy to the `github-pages` environment)
+
+After that, your site should be live on your custom domain (and also available on the default Pages URL).
