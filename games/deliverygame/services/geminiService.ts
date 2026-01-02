@@ -16,8 +16,17 @@ let cached:
 async function loadMissions() {
   if (cached) return cached;
 
-  // Resolve relative to the current page (works for /games/deliverygame/ and /games/deliverygame/index.html).
-  const url = new URL("missions.json", window.location.href);
+  // Resolve relative to the current page.
+  // We normalize "directory-ish" URLs that don't end with "/" (e.g. /deliverygame) so
+  // static hosts that rewrite /deliverygame -> /deliverygame/index.html (without redirect)
+  // still load /deliverygame/missions.json correctly.
+  const baseUrl = new URL(window.location.href);
+  const lastSegment = baseUrl.pathname.split("/").pop() ?? "";
+  const hasExtension = /\.[a-z0-9]+$/i.test(lastSegment);
+  if (!baseUrl.pathname.endsWith("/") && !hasExtension) {
+    baseUrl.pathname = `${baseUrl.pathname}/`;
+  }
+  const url = new URL("missions.json", baseUrl);
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Failed to load missions.json: HTTP ${res.status}`);

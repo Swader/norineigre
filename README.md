@@ -43,7 +43,7 @@ bun run preview
 
 ## Customize content
 
-- Update the two game links in `index.html` (currently `example.com` placeholders).
+- Update the two game links in `index.html` (currently `./games/chickengame/` and `./games/deliverygame/`).
 - Replace the "O meni" text in `index.html` with Nora's handwritten copy.
 
 ## Delivery game (offline missions)
@@ -59,6 +59,13 @@ bun run generate:delivery-missions
 ## Deploy to GitHub Pages (with a custom domain)
 
 This repo is set up to deploy the static build output (`dist/`) to **GitHub Pages** using **GitHub Actions** on every push to the `master` branch.
+
+### Paths in production
+
+- This build uses **relative** URLs for assets and game links, so it can be mounted under a subpath like `/igre/`.
+- When mounted at `/igre/`:
+  - **Launcher**: `/igre/`
+  - **Games**: `/igre/games/chickengame/` and `/igre/games/deliverygame/`
 
 ### 1) Add the GitHub Actions workflow (already included)
 
