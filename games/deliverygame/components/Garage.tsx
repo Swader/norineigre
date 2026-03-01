@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { GamePhase, Mission, PlayerState, PRICES, StickerData } from '../types';
+import { Mission, PlayerState, PRICES, StickerData } from '../types';
 import { generateMissions } from '../services/geminiService';
 import { Truck } from './GameCanvas';
 
@@ -13,6 +13,8 @@ interface Props {
 }
 
 const STICKER_PACK = ["📦", "🍕", "🚀", "💀", "🤡", "🦄", "👽", "💩", "🔥", "💣", "💎", "🚦"];
+const STICKER_OFFSET = 0.01;
+const STICKER_SCALE = 0.6;
 
 export const Garage: React.FC<Props> = ({ playerState, setPlayerState, startDriving }) => {
   const [activeTab, setActiveTab] = useState<'manifest' | 'workshop'>('manifest');
@@ -96,45 +98,58 @@ export const Garage: React.FC<Props> = ({ playerState, setPlayerState, startDriv
       }
   };
 
-  // Sticker Placement Logic
-  const handleStickerPlace = (point: THREE.Vector3, normal: THREE.Vector3) => {
+  const removeLastSticker = () => {
+      setPlayerState(prev => ({
+          ...prev,
+          stickers: prev.stickers.slice(0, -1)
+      }));
+  };
+
+  const clearStickers = () => {
+      setPlayerState(prev => ({
+          ...prev,
+          stickers: []
+      }));
+  };
+
+  const handleStickerPlace = ({ point, normal }: { point: THREE.Vector3; normal: THREE.Vector3 }) => {
       if (!selectedSticker || !truckRef.current) return;
 
-      // Convert world click point to truck's local space so sticker moves with truck
+      // Convert world intersection + normal into the truck's local space.
       const localPoint = truckRef.current.worldToLocal(point.clone());
-      
-      // Calculate rotation to face the normal
-      // Create a dummy object at 0,0,0 looking at the normal direction to extract rotation
-      const dummy = new THREE.Object3D();
-      dummy.lookAt(normal); 
-      
-      // The localPoint is the center. We want to offset slightly in direction of normal
-      // to avoid Z-fighting (though polygonOffset in material also helps)
-      const offset = normal.clone().multiplyScalar(0.02);
-      const finalPos = localPoint.add(offset);
+      const truckWorldQuat = new THREE.Quaternion();
+      truckRef.current.getWorldQuaternion(truckWorldQuat);
+      const localNormal = normal.clone().normalize().applyQuaternion(truckWorldQuat.invert()).normalize();
+
+      if (!Number.isFinite(localNormal.lengthSq()) || localNormal.lengthSq() < 1e-4) {
+          localNormal.set(0, 0, 1);
+      }
+
+      const finalPos = localPoint.clone().add(localNormal.clone().multiplyScalar(STICKER_OFFSET));
+      const orientation = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal);
+      const spin = new THREE.Quaternion().setFromAxisAngle(localNormal, (Math.random() - 0.5) * 0.24);
+      orientation.multiply(spin);
+      const rotation = new THREE.Euler().setFromQuaternion(orientation);
 
       const newSticker: StickerData = {
-          id: Date.now().toString(),
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           emoji: selectedSticker,
           position: [finalPos.x, finalPos.y, finalPos.z],
-          rotation: [dummy.rotation.x, dummy.rotation.y, dummy.rotation.z],
-          scale: 0.5 
+          rotation: [rotation.x, rotation.y, rotation.z],
+          scale: STICKER_SCALE
       };
 
       setPlayerState(prev => ({
           ...prev,
           stickers: [...prev.stickers, newSticker]
       }));
-      
-      // Optionally clear selection after one placement, or keep it for rapid stamping:
-      setSelectedSticker(null); 
   };
 
   return (
     <div className={`w-full h-full flex flex-col md:flex-row bg-slate-800 ${selectedSticker ? 'cursor-crosshair' : 'cursor-auto'}`}>
       {/* LEFT PANEL - PREVIEW */}
       <div className="w-full md:w-1/2 h-1/2 md:h-full relative bg-gradient-to-br from-gray-800 to-gray-900 border-r border-gray-700">
-         <Canvas shadows camera={{ position: [4, 4, 6], fov: 50 }}>
+         <Canvas shadows camera={{ position: [9.0, 4.2, -10.0], fov: 45 }}>
              <ambientLight intensity={0.8} />
              <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={2} castShadow />
              <pointLight position={[-10, -10, -10]} intensity={0.5} />
@@ -146,15 +161,18 @@ export const Garage: React.FC<Props> = ({ playerState, setPlayerState, startDriv
                truckColor={playerState.truckColor}
                stickers={playerState.stickers}
                isPreview={true}
+               stickerPlacementEnabled={Boolean(selectedSticker)}
                onStickerPlace={handleStickerPlace}
              />
              
              {/* Add Orbit Controls to allow looking around the truck */}
              <OrbitControls 
                 enablePan={false} 
-                minDistance={4} 
-                maxDistance={12} 
-                target={[0, 1.5, 0]} // Focus on truck center
+                enableRotate={!selectedSticker}
+                enableZoom={!selectedSticker}
+                minDistance={7} 
+                maxDistance={22} 
+                target={[0, 1.8, -0.6]} // Pull focus toward center to frame full truck
              />
          </Canvas>
          
@@ -162,7 +180,7 @@ export const Garage: React.FC<Props> = ({ playerState, setPlayerState, startDriv
          <div className="absolute top-4 left-4 pointer-events-none">
              {selectedSticker ? (
                  <div className="bg-yellow-500 text-black px-4 py-2 rounded-lg font-bold animate-pulse shadow-lg border-2 border-white">
-                    CLICK TRUCK TO PLACE {selectedSticker}
+                    CLICK TRUCK TO STAMP {selectedSticker}
                  </div>
              ) : (
                  <div className="bg-black/50 text-white text-xs px-2 py-1 rounded">
@@ -174,6 +192,7 @@ export const Garage: React.FC<Props> = ({ playerState, setPlayerState, startDriv
          <div className="absolute bottom-4 left-4 bg-black/60 p-4 rounded-xl text-white font-mono text-sm">
             <div>FUNDS: <span className="text-green-400 text-xl">${playerState.money}</span></div>
             <div>CAPACITY: {selectedMissions.reduce((acc,m) => acc+m.weight, 0)} / {playerState.cargoCapacity}</div>
+            <div>STICKERS: {playerState.stickers.length}</div>
          </div>
       </div>
 
@@ -286,17 +305,40 @@ export const Garage: React.FC<Props> = ({ playerState, setPlayerState, startDriv
                           </div>
                           
                           {playerState.decorations.includes('sticker') ? (
-                             <div className="grid grid-cols-5 gap-2">
-                                {STICKER_PACK.map(sticker => (
-                                   <button 
-                                      key={sticker}
-                                      onClick={() => setSelectedSticker(selectedSticker === sticker ? null : sticker)}
-                                      className={`aspect-square flex items-center justify-center text-2xl rounded hover:bg-white/10 ${selectedSticker === sticker ? 'bg-yellow-500 ring-2 ring-yellow-300' : 'bg-black/30'}`}
+                             <>
+                                <div className="text-xs text-gray-300 mb-3">
+                                   {selectedSticker ? `Selected: ${selectedSticker} (click truck to stamp, click sticker again to stop)` : 'Pick a sticker, then click the truck preview to place it.'}
+                                </div>
+
+                                <div className="grid grid-cols-5 gap-2 mb-3">
+                                   {STICKER_PACK.map(sticker => (
+                                      <button 
+                                         key={sticker}
+                                         onClick={() => setSelectedSticker(selectedSticker === sticker ? null : sticker)}
+                                         className={`aspect-square flex items-center justify-center text-2xl rounded hover:bg-white/10 ${selectedSticker === sticker ? 'bg-yellow-500 ring-2 ring-yellow-300' : 'bg-black/30'}`}
+                                      >
+                                         {sticker}
+                                      </button>
+                                   ))}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                   <button
+                                      onClick={removeLastSticker}
+                                      disabled={playerState.stickers.length === 0}
+                                      className="bg-slate-700 px-3 py-2 text-xs font-bold rounded border border-slate-500 hover:border-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed"
                                    >
-                                      {sticker}
+                                      UNDO LAST
                                    </button>
-                                ))}
-                             </div>
+                                   <button
+                                      onClick={clearStickers}
+                                      disabled={playerState.stickers.length === 0}
+                                      className="bg-red-900/70 px-3 py-2 text-xs font-bold rounded border border-red-500/60 hover:bg-red-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                                   >
+                                      CLEAR ALL
+                                   </button>
+                                </div>
+                             </>
                           ) : (
                              <div className="text-center text-xs text-gray-500 py-4 italic">
                                 Purchase to customize your truck

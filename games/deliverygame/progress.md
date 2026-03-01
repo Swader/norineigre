@@ -1,0 +1,138 @@
+Original prompt: The games/deliverygame has a bug where sticker placement in the workshop doesn't work - I click on the truck with a sticker selected, but nothing appears on the truck itself. Let's improve this dramatically - make any changes necessary to this game to make us able to customize the truck with stickers.
+
+- Initialized investigation and identified likely failures in preview sticker placement: pointer target coverage, world/local normal conversion, and emoji alpha rendering.
+- Implemented sticker-system overhaul in `Garage.tsx` and `GameCanvas.tsx`:
+  - sticker hit detection now works across major truck body meshes in preview mode.
+  - hit normals are transformed correctly and converted to truck-local placement orientation.
+  - emoji decal texture/material updated for visibility (emoji font stack, lower alpha threshold, no depth write).
+  - sticker mode now supports rapid stamping (selection persists) plus `UNDO LAST` and `CLEAR ALL` tools.
+  - garage preview defaults adjusted for better truck framing during customization.
+- Fixed a local runtime blocker while testing: pinned `react-dom` to `18.2.0` to match `react@18.2.0` (the previous mismatch caused a startup crash in local dev).
+- Verification run summary:
+  - `npm run build` passes.
+  - Playwright verification confirms stickers now render visibly after placement and can be stamped repeatedly.
+  - `UNDO LAST` and `CLEAR ALL` controls update sticker count and visuals correctly.
+  - Additional click test confirms placement works on cabin mesh, not only cargo box.
+- Reproduced reported issue in driving mode: passenger-door skull rendered as a large floating sticker on the right side of first-person view.
+- Applied targeted decal visibility fix: sticker material now uses `THREE.FrontSide` (instead of double-sided) to prevent interior-camera backside rendering.
+- New user-reported regression fixed: stickers on passenger-side exterior no longer appear as floating overlays in first-person driving view.
+- Root cause: decals were rendered `DoubleSide`, so backside faces were visible from inside the cabin (where truck interior walls are backface-culled).
+- Fix: switched sticker material to `THREE.FrontSide` so only outward-facing decal surfaces render.
+- Re-verified with scripted flow: place skull on passenger side in workshop -> start route -> driving screenshot confirms no floating skull artifact.
+- Follow-up regression pass for driving view:
+  - Reduced placement offset (`STICKER_OFFSET`) so decals sit flush instead of hovering above body panels.
+  - Switched decal depth behavior to write depth and reduced polygon offset aggressiveness to improve panel adherence in cockpit perspective.
+  - Added an inside-only cabin shell (`BackSide` interior mesh) so exterior door decals are occluded from first-person camera.
+- Adjusted occlusion implementation after first attempt over-blocked view: replaced full interior cabin shell with side-only interior door panels to hide side-door decals while preserving windshield visibility.
+- Additional user-reported behavior (door sticker still floating + hood offset perception) addressed:
+  - Door/cockpit occlusion now handled with side interior panels, so passenger/driver door decals no longer bleed into first-person view.
+  - Decal surface anchoring tightened (`STICKER_OFFSET` lowered, less aggressive polygon offset, depth write enabled) to reduce detached/floating appearance on angled panels.
+- Post-fix checks:
+  - Build passes.
+  - Repro placing skull on passenger door + clown in workshop and then entering driving mode shows no floating side sticker artifact.
+  - Windshield visibility preserved (no full-cabin occlusion shell).
+- Screenshot-driven quality pass (user report about side windows + label bleed-through):
+  - Replaced full interior side blockers with door trim that includes open window cutouts (restores side-window visibility).
+  - Added world-occluded address labels (`Html occlude`) and distance culling from truck position so labels don't render as always-on overlays through geometry.
+  - Reduced non-target label visual weight (smaller typography and size), preserving strong emphasis for active targets.
+  - Kept door sticker occlusion behavior by retaining solid lower/edge interior door geometry while leaving window openings transparent.
+- Major cockpit/scene visual overhaul pass (2026-02-28, late):
+  - Reworked cockpit proportions: lowered/sloped hood, re-centered camera, bigger/closer steering wheel with hub + column, revised dashboard profile.
+  - Added explicit rear cabin bulkhead so cargo/trunk stickers are blocked from first-person cockpit view.
+  - Rebuilt windshield framing and side-door framing with transparent window panes to keep side visibility while preserving door-frame occlusion.
+  - Retuned sticker rendering/material + placement offsets to reduce clipping/cut artifacts on body panels.
+  - Rebuilt house roof stack (base + cone) and wall heights to remove visible roof/wall clipping.
+  - Moved address labels lower and bottom-anchored for more natural occlusion against doors/houses.
+- Follow-up cockpit + label pass:
+  - Switched address labels from `sprite` to depth-tested billboarded planes to improve real geometry occlusion behavior through doors/houses.
+  - Reduced normal label range further to cut clutter and bring target emphasis.
+  - Lowered windshield lower bar/dashboard/hood and moved first-person camera to recover road visibility and expose steering wheel area.
+  - Thickened door top rail for stronger partial occlusion of upper-side labels.
+- Cockpit pass 3:
+  - Lowered windshield lower rail and lowered dash/cowl + hood again to reduce interior walling and improve road-forward visibility.
+  - Pulled steering wheel significantly upward/forward for better visibility in first-person frame.
+- Sticker placement pass:
+  - Increased panel offset and snapped hit normals to dominant local axis to reduce edge-angle cut/clipped decals on low-poly truck surfaces.
+- Cockpit pass 4:
+  - Retuned steering wheel scale/placement/column so the wheel is visible without dominating the full viewport.
+  - Changed driving spawn heading to face into the city grid by default (less empty-sky startup framing, better immediate navigation readability).
+  - Slightly increased non-target label distance after culling pass to keep nearby wayfinding available.
+- Cockpit + label visibility tuning:
+  - Nudged wheel/camera vertical relationship again to keep wheel visible while preserving forward road visibility.
+  - Reduced label panel sizes and lowered label anchors so nearby labels stay visible but interact more naturally with occluding geometry.
+- Final visibility touch-up:
+  - Increased steering wheel contrast and shifted it toward center-lower cockpit view for clearer readability.
+  - Lowered label anchor height further so house labels are visible again and naturally intersect with roof/door-frame occlusion.
+- Label anchor retune: moved house-label base up from 7.2 to 9.3 after seeing full occlusion; keeps labels visible while still allowing roof/frame overlap.
+- Ran required develop-web-game client script (`web_game_playwright_client.js`) against local dev server and inspected generated screenshots (`output/web-game-client`); no console/page errors emitted.
+- User requested truck model quality uplift in workshop view.
+- Rebuilt truck exterior silhouette in `GameCanvas.tsx`:
+  - New chassis rails/undercarriage proportions.
+  - Redesigned cabin shell/roof/windshield face + door shells + mirrors.
+  - Rebuilt hood/nose with separate bumper and grille.
+  - Resized cargo box with top cap and side rails.
+  - Retuned wheel positions/radius and added visible wheel rims.
+  - Kept sticker placement hooks on exterior paintable surfaces.
+- Workshop presentation pass:
+  - Adjusted preview truck default yaw to front-three-quarter view.
+  - Retuned workshop camera position/FOV and OrbitControls target to focus cab + hood instead of cargo side.
+- Workshop framing iteration 2:
+  - Moved preview camera to front-right (negative-Z) perspective.
+  - Reset preview truck yaw for cleaner first-impression silhouette at workshop load.
+  - Updated OrbitControls target toward front cab/hood.
+- External detail polish:
+  - Replaced oversized mirror blocks with realistic stem + compact mirror heads.
+  - Added front fender lips and side steps to break up boxy cab silhouette.
+- Preview cleanup: disabled mirror geometry in workshop preview to remove projected mirror-overlap artifacts on door decals while retaining mirrors in driving mode.
+- Proportion refinement pass:
+  - Reduced cab height/volume and lowered roofline to avoid cube-like silhouette.
+  - Slimmed hood, bumper, and grille dimensions for lighter front-end proportions.
+  - Reduced wheel radius and fender bulk to better match cabin scale.
+- Re-ran required skill client (`web_game_playwright_client.js`) after final proportion/detail pass; screenshots regenerated under `output/web-game-client`.
+- Workshop framing iteration 3:
+  - Reduced lateral camera offset and increased frontward distance for less side-dominant presentation.
+  - Reset preview yaw to neutral to present truck from a consistent front-leaning angle.
+- Workshop framing iteration 3 verified with custom + skill-client screenshots; front bumper/headlight area now visible by default in workshop.
+- Cleanup: removed temporary verification scripts and screenshot output directory after validation.
+- Real-model migration started:
+  - Added `public/models/CesiumMilkTruck.glb` and wired `useGLTF`-based `TruckBodyModel`.
+  - Replaced primitive exterior render with GLB model + runtime paint tinting.
+  - Added invisible sticker hit volumes (cab/hood/cargo) so workshop stamping still works with the model.
+  - Kept cockpit interior/occlusion stack and first-person camera path unchanged.
+- Real model framing pass:
+  - Reduced GLB scale for better world/cockpit fit.
+  - Pulled workshop camera back and widened FOV to show the full truck body instead of close-up grille crop.
+  - Retuned OrbitControls target and zoom bounds for full-vehicle customization framing.
+- Final real-model verification:
+  - Custom Playwright scenario confirms workshop now presents a recognizable truck model and driving mode remains functional.
+  - Re-ran required `web_game_playwright_client.js` on final state; workshop screenshots show full GLB truck silhouette.
+- 2026-03-01 model loading hotfix:
+  - Fixed runtime 404 by removing absolute GLB URL dependency (`/models/CesiumMilkTruck.glb`) and loading truck model via Vite-managed module URL import (`assets/CesiumMilkTruck.glb?url`).
+  - Added source asset copy at `assets/CesiumMilkTruck.glb` so model path is emitted as hashed build asset under `/assets/...` in all environments.
+  - Build verification: `npm run build` emits `dist/assets/CesiumMilkTruck-*.glb`.
+  - Runtime verification:
+    - Ran required skill Playwright client against local dev server and inspected workshop screenshots (truck model visible, no fallback/missing-asset state).
+    - Captured network responses during workshop load: both `.../assets/CesiumMilkTruck.glb?import&url` and `.../assets/CesiumMilkTruck.glb` returned HTTP `200`.
+- 2026-03-01 Bun root-build compatibility fix:
+  - User reported `bun run build` failure: Bun bundler could not resolve `../assets/CesiumMilkTruck.glb?url` from `GameCanvas.tsx`.
+  - Replaced bundler-specific `?url` import with runtime URL resolution helper that selects:
+    - `/assets/CesiumMilkTruck.glb` for standalone Vite dev (`/` path).
+    - `/games/deliverygame/assets/CesiumMilkTruck.glb` when served from root-site build (`/games/deliverygame/index.html`).
+  - Verification:
+    - `bun run build` from repo root succeeds.
+    - Dist contains `dist/games/deliverygame/assets/CesiumMilkTruck.glb`.
+    - Playwright network capture against `http://127.0.0.1:8787/games/deliverygame/index.html` shows GLB request `200`.
+- 2026-03-01 sticker + cockpit follow-up (user screenshot regression):
+  - Sticker stamping now raycasts the real GLB truck mesh directly in workshop (removed invisible proxy hit boxes).
+  - Sticker hits now ignore non-paint surfaces by mesh/material name filter (glass/windows/lights/tires/etc.).
+  - Placement normals now preserve true surface slope (removed dominant-axis snap), with backface correction and slightly reduced offset/spin.
+  - Cockpit windshield obstruction reduced by removing custom vertical windshield bars, slimming top/lower rails, lowering dash/cowl, and widening driver camera FOV.
+- 2026-03-01 final polish after screenshot pass:
+  - Further reduced windshield/side-window pane opacity and lowered the lower windshield rail + dash stack to open forward visibility.
+  - Verification loop:
+    - `bun run build` succeeded after all edits.
+    - Required `web_game_playwright_client.js` run completed (`output/web-game-regression-2`).
+    - Targeted Playwright scenario confirmed:
+      - Workshop stickers no longer appear as edge slivers on hood/door (`output/web-game-sticker-check-2/workshop-after-stamps.png`).
+      - Driving cockpit shows materially improved center visibility vs previous blocked windshield framing (`output/web-game-sticker-check-2/driving-cockpit.png`).
+    - Captured browser error logs were empty (`errors.json` = `[]`).

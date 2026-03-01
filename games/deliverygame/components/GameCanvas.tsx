@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useMemo, useState, useLayoutEffect } from 'react';
-import { Canvas, useFrame, ThreeEvent } from '@react-three/fiber';
-import { PerspectiveCamera, Html } from '@react-three/drei';
+import { Canvas, useFrame, useThree, ThreeEvent } from '@react-three/fiber';
+import { PerspectiveCamera, Html, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { ActiveDelivery, PlayerState, StickerData } from '../types';
 
@@ -17,6 +17,44 @@ const CITY_SIZE = 10; // blocks
 const BLOCK_SIZE = 80;
 const HOUSE_OFFSET = 25;
 const HOUSE_SIZE = 12; // Visual size
+const LABEL_DISTANCE_NORMAL = 240;
+const LABEL_DISTANCE_TARGET = 1000;
+const TRUCK_MODEL_FILE = 'CesiumMilkTruck.glb';
+
+const resolveTruckModelUrl = () => {
+  if (typeof window === 'undefined') {
+    return `/assets/${TRUCK_MODEL_FILE}`;
+  }
+
+  const { origin, pathname } = window.location;
+  const gamePath = '/games/deliverygame';
+  const gamePathIndex = pathname.indexOf(gamePath);
+
+  // Dist build serves the game at /games/deliverygame/index.html. Vite dev serves at /.
+  if (gamePathIndex >= 0) {
+    const prefix = pathname.slice(0, gamePathIndex);
+    return `${origin}${prefix}${gamePath}/assets/${TRUCK_MODEL_FILE}`;
+  }
+
+  return `${origin}/assets/${TRUCK_MODEL_FILE}`;
+};
+
+const truckModelUrl = resolveTruckModelUrl();
+
+const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+};
 
 // Helper to generate static city data
 const generateCityGrid = () => {
@@ -66,37 +104,131 @@ const getTargetPos = (d: ActiveDelivery) => {
 
 // --- COMPONENTS ---
 
+type StickerPlacementHit = {
+  point: THREE.Vector3;
+  normal: THREE.Vector3;
+};
+
 const EmojiSticker = ({ emoji, position, rotation, scale }: { emoji: string, position: [number, number, number], rotation: [number, number, number], scale: number }) => {
   const texture = useMemo(() => {
     const canvas = document.createElement('canvas');
-    canvas.width = 128;
-    canvas.height = 128;
+    canvas.width = 256;
+    canvas.height = 256;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.clearRect(0, 0, 128, 128);
-      ctx.fillStyle = 'rgba(0,0,0,0)';
-      ctx.font = '100px Arial'; // Standard sans-serif for emoji support
+      ctx.clearRect(0, 0, 256, 256);
+      ctx.font = '200px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(emoji, 64, 70); // Slightly adjusted Y for centering
+      ctx.fillText(emoji, 128, 142);
     }
     const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
     tex.needsUpdate = true;
     return tex;
   }, [emoji]);
 
   return (
-    <mesh position={position} rotation={rotation}>
-      <planeGeometry args={[scale * 2.5, scale * 2.5]} />
+    <mesh position={position} rotation={rotation} renderOrder={10}>
+      <planeGeometry args={[scale * 1.8, scale * 1.8]} />
       <meshBasicMaterial 
         map={texture} 
         transparent 
-        alphaTest={0.5} 
-        side={THREE.DoubleSide} 
+        alphaTest={0.005}
+        depthTest
+        depthWrite={false}
+        toneMapped={false}
+        side={THREE.FrontSide}
         polygonOffset 
-        polygonOffsetFactor={-2} // Pulls pixels forward to avoid z-fighting
+        polygonOffsetFactor={-4}
       />
     </mesh>
+  );
+};
+
+const AddressLabel = ({ number, street, isTarget }: { number: number; street: string; isTarget: boolean }) => {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { camera } = useThree();
+
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 320;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawRoundedRect(ctx, 20, 30, 472, 260, 28);
+      ctx.fillStyle = isTarget ? 'rgba(250, 204, 21, 0.95)' : 'rgba(51, 76, 103, 0.9)';
+      ctx.fill();
+      ctx.lineWidth = isTarget ? 10 : 5;
+      ctx.strokeStyle = isTarget ? 'rgba(255,255,255,0.92)' : 'rgba(180, 193, 208, 0.35)';
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = isTarget ? '#0f172a' : '#f8fafc';
+      ctx.font = `bold ${isTarget ? 150 : 108}px "Arial Black", "Segoe UI", sans-serif`;
+      ctx.fillText(String(number), canvas.width / 2, 176);
+      ctx.font = `bold ${isTarget ? 72 : 56}px "Arial Black", "Segoe UI", sans-serif`;
+      ctx.fillText(street, canvas.width / 2, 244);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+  }, [number, street, isTarget]);
+
+  useFrame(() => {
+    if (!meshRef.current) return;
+    meshRef.current.quaternion.copy(camera.quaternion);
+  });
+
+  const labelScale = isTarget ? [12, 7, 1] : [5.6, 3.4, 1];
+
+  return (
+    <mesh ref={meshRef} scale={labelScale} position={[0, labelScale[1] * 0.5, 0]}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial map={texture} transparent alphaTest={0.05} depthTest depthWrite toneMapped={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+};
+
+const NON_PAINT_PART_PATTERN = /(glass|window|tire|wheel|rim|light|lamp|head|mirror|chrome|license|plate|interior|seat|dash|black|rubber)/i;
+
+const TruckBodyModel = ({ truckColor }: { truckColor: string }) => {
+  const gltf = useGLTF(truckModelUrl) as any;
+
+  const modelScene = useMemo(() => {
+    const clone = gltf.scene.clone(true);
+    clone.traverse((obj: any) => {
+      if (!obj?.isMesh) return;
+      obj.castShadow = true;
+      obj.receiveShadow = true;
+
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const nextMaterials = materials.map((mat: any) => {
+        if (!mat || typeof mat.clone !== 'function') return mat;
+        const next = mat.clone();
+        const tag = `${obj.name || ''} ${next.name || ''}`;
+        if ('color' in next && !NON_PAINT_PART_PATTERN.test(tag)) {
+          const target = new THREE.Color(truckColor);
+          next.color = next.color.clone().lerp(target, 0.58);
+        }
+        next.needsUpdate = true;
+        return next;
+      });
+      obj.material = Array.isArray(obj.material) ? nextMaterials : nextMaterials[0];
+    });
+    return clone;
+  }, [gltf.scene, truckColor]);
+
+  return (
+    <group position={[0, 0.06, -0.02]} rotation={[0, Math.PI, 0]} scale={[1.32, 1.32, 1.32]}>
+      <primitive object={modelScene} />
+    </group>
   );
 };
 
@@ -164,15 +296,22 @@ export const Truck = React.forwardRef<THREE.Group, {
     truckColor?: string,
     stickers?: StickerData[],
     isPreview?: boolean,
-    onStickerPlace?: (point: THREE.Vector3, normal: THREE.Vector3) => void
-}>(({ decorations, steeringVal, activeDelivery, truckColor = '#0044aa', stickers = [], isPreview = false, onStickerPlace }, ref) => {
+    stickerPlacementEnabled?: boolean,
+    onStickerPlace?: (hit: StickerPlacementHit) => void
+}>(({ decorations, steeringVal, activeDelivery, truckColor = '#0044aa', stickers = [], isPreview = false, stickerPlacementEnabled = false, onStickerPlace }, ref) => {
   const wheelRef = useRef<THREE.Group>(null);
   const groupRef = ref as React.MutableRefObject<THREE.Group>;
 
   useLayoutEffect(() => {
-    if (groupRef.current && !isPreview) {
+    if (!groupRef.current) return;
+
+    if (!isPreview) {
       // SPAWN ON ROAD (Not Sky Drop)
       groupRef.current.position.set(0, 2.0, 0);
+      groupRef.current.rotation.set(0, Math.PI, 0);
+    } else {
+      // Give the garage a readable default angle.
+      groupRef.current.position.set(0, 0, 0);
       groupRef.current.rotation.set(0, 0, 0);
     }
   }, [isPreview]);
@@ -190,59 +329,123 @@ export const Truck = React.forwardRef<THREE.Group, {
   });
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (isPreview && onStickerPlace) {
-      e.stopPropagation();
-      // Pass the intersection point and normal (world space) to parent
-      if (e.face) {
-        onStickerPlace(e.point, e.face.normal);
-      }
+    if (!isPreview || !stickerPlacementEnabled || !onStickerPlace || !e.face) return;
+
+    e.stopPropagation();
+    const mesh = e.object as THREE.Mesh;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const materialNames = materials.map((mat: any) => mat?.name || '').join(' ');
+    const tag = `${mesh.name || ''} ${materialNames}`.trim();
+
+    // Ignore non-paint surfaces like glass/windows/lights/tires for sticker stamping.
+    if (NON_PAINT_PART_PATTERN.test(tag)) return;
+
+    const worldPoint = e.point.clone();
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    const worldNormal = e.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+
+    // If we hit a backface (possible on two-sided geometry), flip the normal outward.
+    if (worldNormal.dot(e.ray.direction) > 0) {
+      worldNormal.multiplyScalar(-1);
     }
+
+    onStickerPlace({ point: worldPoint, normal: worldNormal });
   };
+
+  const stickerPointerProps = isPreview && stickerPlacementEnabled ? { onPointerDown: handlePointerDown } : {};
 
   return (
     <group ref={ref}>
       {/* Cabin Light - Only in game */}
       {!isPreview && <pointLight position={[0, 2.5, -0.5]} intensity={1} distance={4} decay={2} color="#ffaa55" />}
 
-      {/* --- CHASSIS --- */}
-      {/* Run full length underneath */}
-      <mesh position={[0, 1.0, 0.5]} castShadow receiveShadow>
-        <boxGeometry args={[2.4, 0.5, 9.0]} /> 
-        <meshStandardMaterial color="#111" roughness={0.8} />
-      </mesh>
-      
-      {/* --- CABIN --- */}
-      {/* Centered at Z=-2.0, Depth 2.5 -> Extents: -3.25 to -0.75 */}
-      <group position={[0, 0, -2.0]}>
-        {/* Main Cabin Block */}
-        <mesh position={[0, 2.0, 0]} castShadow receiveShadow>
-            <boxGeometry args={[2.5, 3.5, 2.5]} />
-            <meshStandardMaterial color={truckColor} roughness={0.4} />
-        </mesh>
-        {/* Hood */}
-        <mesh position={[0, 1.25, -1.8]} rotation={[0.05, 0, 0]} castShadow receiveShadow>
-            <boxGeometry args={[2.3, 2.0, 1.5]} />
-            <meshStandardMaterial color={truckColor} roughness={0.4} />
-        </mesh>
-        {/* Interior Details */}
-        <mesh position={[0, 2.5, 0.8]} rotation={[0, 0, 0]}>
-             <boxGeometry args={[2.2, 2.0, 0.1]} />
-             <meshStandardMaterial color="#333" />
-        </mesh>
+      {/* --- REAL TRUCK MODEL --- */}
+      <group {...stickerPointerProps}>
+        <TruckBodyModel truckColor={truckColor} />
       </group>
 
-      {/* --- CARGO BOX --- */}
-      {/* Centered at Z=1.75, Depth 5.0 -> Extents: -0.75 to 4.25 */}
-      {/* Meets Cabin perfectly at Z=-0.75 */}
-      <mesh 
-        position={[0, 2.6, 1.75]} 
-        castShadow 
-        receiveShadow
-        onPointerDown={handlePointerDown}
-      >
-         <boxGeometry args={[2.6, 4.0, 5.0]} />
-         <meshStandardMaterial color="#BDB76B" roughness={0.9} />
-      </mesh>
+      {/* --- CABIN INTERIOR / COCKPIT OCCLUSION --- */}
+      <group position={[0, 0, -2.0]}>
+        {!isPreview && (
+          <>
+            {/* Rear bulkhead hides cargo stickers from cockpit and sells a proper cab interior. */}
+            <mesh position={[0, 2.0, 1.16]}>
+                <boxGeometry args={[2.28, 3.0, 0.08]} />
+                <meshStandardMaterial color="#1b263d" roughness={0.72} metalness={0.04} />
+            </mesh>
+
+            {/* Windshield frame */}
+            <mesh position={[0, 3.08, -1.15]}>
+                <boxGeometry args={[2.06, 0.1, 0.08]} />
+                <meshStandardMaterial color="#162338" roughness={0.74} />
+            </mesh>
+            <mesh position={[0, 1.34, -1.15]}>
+                <boxGeometry args={[2.06, 0.1, 0.08]} />
+                <meshStandardMaterial color="#162338" roughness={0.74} />
+            </mesh>
+            <mesh position={[0, 2.3, -1.19]}>
+                <planeGeometry args={[2.0, 1.56]} />
+                <meshStandardMaterial color="#9ec8df" transparent opacity={0.1} roughness={0.08} metalness={0.05} depthWrite={false} />
+            </mesh>
+
+            {/* Interior door trim with transparent window panels */}
+            <group position={[1.2, 2.0, 0]}>
+                <mesh position={[0, -0.6, 0]}>
+                    <boxGeometry args={[0.1, 1.68, 2.16]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[0, 1.02, 0]}>
+                    <boxGeometry args={[0.1, 0.34, 2.16]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[0, 0.32, 0.88]}>
+                    <boxGeometry args={[0.1, 1.14, 0.4]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[0, 0.32, -0.88]}>
+                    <boxGeometry args={[0.1, 1.14, 0.4]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[-0.06, 0.38, 0]} rotation={[0, Math.PI / 2, 0]}>
+                    <planeGeometry args={[1.6, 1.08]} />
+                    <meshStandardMaterial color="#9ec8df" transparent opacity={0.08} roughness={0.05} metalness={0.08} depthWrite={false} />
+                </mesh>
+            </group>
+            <group position={[-1.2, 2.0, 0]}>
+                <mesh position={[0, -0.6, 0]}>
+                    <boxGeometry args={[0.1, 1.68, 2.16]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[0, 1.02, 0]}>
+                    <boxGeometry args={[0.1, 0.34, 2.16]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[0, 0.32, 0.88]}>
+                    <boxGeometry args={[0.1, 1.14, 0.4]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[0, 0.32, -0.88]}>
+                    <boxGeometry args={[0.1, 1.14, 0.4]} />
+                    <meshStandardMaterial color="#1e2a44" roughness={0.7} metalness={0.05} />
+                </mesh>
+                <mesh position={[0.06, 0.38, 0]} rotation={[0, Math.PI / 2, 0]}>
+                    <planeGeometry args={[1.6, 1.08]} />
+                    <meshStandardMaterial color="#9ec8df" transparent opacity={0.08} roughness={0.05} metalness={0.08} depthWrite={false} />
+                </mesh>
+            </group>
+
+            {/* Dashboard and instrument cowl */}
+            <mesh position={[0, 0.88, -1.66]} rotation={[0.03, 0, 0]}>
+                <boxGeometry args={[2.05, 0.2, 0.74]} />
+                <meshStandardMaterial color="#18233a" roughness={0.72} />
+            </mesh>
+            <mesh position={[0, 1.08, -1.93]} rotation={[-0.34, 0, 0]}>
+                <boxGeometry args={[1.92, 0.2, 0.32]} />
+                <meshStandardMaterial color="#111b30" roughness={0.7} />
+            </mesh>
+          </>
+        )}
+      </group>
       
       {/* --- STICKERS --- */}
       {stickers.map(sticker => (
@@ -255,44 +458,25 @@ export const Truck = React.forwardRef<THREE.Group, {
           />
       ))}
 
-      {/* Headlights */}
-      <mesh position={[0.8, 1.0, -3.4]} rotation={[Math.PI/2, 0, 0]}>
-        <cylinderGeometry args={[0.25, 0.25, 0.2]} />
-        <meshStandardMaterial color="#ffff00" emissive="#ffff00" emissiveIntensity={2} />
-      </mesh>
-      <mesh position={[-0.8, 1.0, -3.4]} rotation={[Math.PI/2, 0, 0]}>
-        <cylinderGeometry args={[0.25, 0.25, 0.2]} />
-        <meshStandardMaterial color="#ffff00" emissive="#ffff00" emissiveIntensity={2} />
-      </mesh>
-      
-      {/* Wheels */}
-      <group position={[0, 0.5, 0]}>
-        <mesh position={[1.3, 0, 2.5]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.7, 0.7, 0.6, 16]} />
-          <meshStandardMaterial color="#111" />
-        </mesh>
-        <mesh position={[-1.3, 0, 2.5]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.7, 0.7, 0.6, 16]} />
-          <meshStandardMaterial color="#111" />
-        </mesh>
-        <mesh position={[1.3, 0, -2]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.7, 0.7, 0.6, 16]} />
-          <meshStandardMaterial color="#111" />
-        </mesh>
-        <mesh position={[-1.3, 0, -2]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.7, 0.7, 0.6, 16]} />
-          <meshStandardMaterial color="#111" />
-        </mesh>
-      </group>
 
       {/* --- INTERIOR / COCKPIT --- */}
       <group position={[0, 0, 0]}>
          {/* Steering Wheel */}
-         <group ref={wheelRef} position={[-0.6, 1.8, -1.8]} rotation={[-0.4, 0, 0]}>
+         <group ref={wheelRef} position={[-0.52, 1.42, -2.46]} rotation={[-0.78, 0.22, 0.12]}>
             <mesh>
-               <torusGeometry args={[0.35, 0.05, 8, 16]} />
-               <meshStandardMaterial color="#111" />
+              <torusGeometry args={[0.4, 0.052, 12, 28]} />
+               <meshStandardMaterial color="#2b3442" roughness={0.55} metalness={0.25} />
             </mesh>
+            <mesh position={[0, 0.02, 0]}>
+              <sphereGeometry args={[0.09, 12, 12]} />
+              <meshStandardMaterial color="#364152" roughness={0.5} metalness={0.3} />
+            </mesh>
+            {!isPreview && (
+              <mesh position={[0, -0.18, 0.1]} rotation={[1.0, -0.18, 0]}>
+                <cylinderGeometry args={[0.04, 0.04, 0.32, 12]} />
+                <meshStandardMaterial color="#0b1220" />
+              </mesh>
+            )}
          </group>
 
          {/* Bobblehead */}
@@ -313,7 +497,7 @@ export const Truck = React.forwardRef<THREE.Group, {
       {/* First Person Camera */}
       {!isPreview && (
         <>
-            <PerspectiveCamera makeDefault position={[0, 2.8, -1.2]} rotation={[-0.05, 0, 0]} fov={85} near={0.1} />
+            <PerspectiveCamera makeDefault position={[-0.03, 1.84, -2.12]} rotation={[-0.005, 0.01, 0]} fov={80} near={0.1} />
             <CompassOverlay truckRef={groupRef} activeDelivery={activeDelivery} />
         </>
       )}
@@ -321,36 +505,47 @@ export const Truck = React.forwardRef<THREE.Group, {
   );
 });
 
+useGLTF.preload(truckModelUrl);
+
 // A House Component
-const House = ({ position, number, street, isTarget }: any) => {
-  const isLeft = position[0] < 0; 
+const House = ({ position, number, street, isTarget, truckRef }: { position: THREE.Vector3; number: number; street: string; isTarget: boolean; truckRef: React.RefObject<THREE.Group | null>; }) => {
+  const isLeft = position.x < 0;
+  const labelRef = useRef<THREE.Group>(null);
+
+  useFrame(() => {
+    if (!labelRef.current || !truckRef.current) return;
+
+    const targetDistance = isTarget ? LABEL_DISTANCE_TARGET : LABEL_DISTANCE_NORMAL;
+    const dist = truckRef.current.position.distanceTo(position);
+    labelRef.current.visible = dist <= targetDistance;
+  });
+
   return (
     <group position={position}>
       {/* The Building */}
-      <mesh position={[0, 4, 0]} castShadow receiveShadow>
-        <boxGeometry args={[HOUSE_SIZE, 8, HOUSE_SIZE]} />
+      <mesh position={[0, 3.85, 0]} castShadow receiveShadow>
+        <boxGeometry args={[HOUSE_SIZE, 7.7, HOUSE_SIZE]} />
         <meshStandardMaterial color={isTarget ? "#eec" : "#889"} />
       </mesh>
       {/* Roof */}
-      <mesh position={[0, 8.5, 0]} rotation={[0, Math.PI/4, 0]}>
-         <coneGeometry args={[10, 5, 4]} />
+      <mesh position={[0, 8.1, 0]} rotation={[0, Math.PI/4, 0]}>
+         <cylinderGeometry args={[7.1, 7.1, 0.5, 4]} />
+         <meshStandardMaterial color="#6a3c3c" />
+      </mesh>
+      <mesh position={[0, 9.65, 0]} rotation={[0, Math.PI/4, 0]}>
+         <coneGeometry args={[6.6, 2.7, 4]} />
          <meshStandardMaterial color="#553333" />
       </mesh>
       
       {/* Door */}
-      <mesh position={[0, 2, isLeft ? 6.1 : -6.1]} rotation={[0, isLeft ? 0 : Math.PI, 0]}>
+      <mesh position={[0, 1.9, isLeft ? 6.1 : -6.1]} rotation={[0, isLeft ? 0 : Math.PI, 0]}>
          <planeGeometry args={[3, 4]} />
          <meshStandardMaterial color="#331100" />
       </mesh>
       
       {/* Address Text */}
-      <group position={[0, 14, 0]}>
-         <Html transform distanceFactor={60} sprite center zIndexRange={[1000, 0]}>
-            <div className={`text-center font-retro p-2 rounded-lg select-none ${isTarget ? 'bg-yellow-500 text-black border-4 border-white animate-bounce shadow-xl' : 'bg-slate-800/80 text-white border border-slate-600'}`}>
-               <div className="text-4xl font-bold">{number}</div>
-               <div className="text-sm whitespace-nowrap px-2">{street}</div>
-            </div>
-         </Html>
+      <group ref={labelRef} position={[0, 9.3, 0]}>
+         <AddressLabel number={number} street={street} isTarget={isTarget} />
       </group>
       
       {/* Delivery Zone Indicator */}
@@ -364,7 +559,7 @@ const House = ({ position, number, street, isTarget }: any) => {
   );
 };
 
-const City = ({ activeDeliveries, cityData }: any) => {
+const City = ({ activeDeliveries, cityData, truckRef }: { activeDeliveries: ActiveDelivery[]; cityData: any[]; truckRef: React.RefObject<THREE.Group | null>; }) => {
   return (
     <group>
       {/* Ground (Grass) */}
@@ -403,6 +598,7 @@ const City = ({ activeDeliveries, cityData }: any) => {
             key={h.id} 
             {...h} 
             isTarget={!!isTarget} 
+            truckRef={truckRef}
           />
         );
       })}
@@ -581,7 +777,7 @@ const GameLoop = ({ activeDeliveries, setActiveDeliveries, playerState, onComple
 
   return (
     <>
-      <City activeDeliveries={activeDeliveries} cityData={cityData} />
+      <City activeDeliveries={activeDeliveries} cityData={cityData} truckRef={truckRef} />
       <Truck 
         ref={truckRef} 
         decorations={playerState.decorations} 
